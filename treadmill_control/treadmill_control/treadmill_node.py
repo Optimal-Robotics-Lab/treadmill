@@ -277,9 +277,22 @@ class Treadmill(Node):
         else: 
             print("Unknown command")
 
+        self._send_special_command()
+        # # if this does not work try to send as binary
+        # msg = self.get_hex()
+        #
+        # self.client.write_register(address=682, value=msg, slave=1)
+        #
+        # # Clean up special commands to prevent repeated sending
+        # if self.set_quick_stop == True:
+        #     self.set_quick_stop = False
+        # if self.set_fault_reset == True:
+        #     self.set_fault_reset = False
+
+    def _send_special_command(self):
+
         # if this does not work try to send as binary
         msg = self.get_hex()
-
         self.client.write_register(address=682, value=msg, slave=1)
 
         # Clean up special commands to prevent repeated sending
@@ -332,6 +345,17 @@ class Treadmill(Node):
     def set_speed_callback(self, msg):
         # for details see SCM page 14
         speed = msg.data
+
+        if speed < 0:
+            speed = abs(speed)
+            if self.set_direction == True:
+                self.set_direction = False
+                self._send_special_command()
+        if speed > 0: 
+            if self.set_direction == False:
+                self.set_direction = True
+                self._send_special_command()
+
         # convert speed to rpm
         raw_rpm = self._speed_to_rpm(speed)
         synchronous_speed = 1800
