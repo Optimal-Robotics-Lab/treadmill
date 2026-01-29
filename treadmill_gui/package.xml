@@ -1,23 +1,24 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>treadmill_control</name>
+  <name>treadmill_gui</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="ciscor@todo.todo">ciscor</maintainer>
-  <license>Apache-2.0</license>
+  <maintainer email="nec25a@fsu.edu">ciscor</maintainer>
+  <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
-  <depend>treadmill_interfaces</depend>
   <depend>std_msgs</depend>
+  <depend>treadmill_interfaces</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
-  <exec_depend>python-pymodbus</exec_depend>
-	
+  <exec_depend>python3-pyqt6</exec_depend>
+  <exec_depend>python-matplotlib</exec_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>
