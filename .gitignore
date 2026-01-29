@@ -1,0 +1,35 @@
+# --- ROS 2 Build Artifacts ---
+build/
+install/
+log/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pylint.d/
+
+# --- C++ / Compiled Objects ---
+*.o
+*.obj
+*.so
+*.a
+*.lib
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
+*.swp
+*.swo
+
+# --- OS Generated ---
+.DS_Store
+Thumbs.db
+
+# --- Package Specific ---
+# Ignore generated documentation
+docs/_build/
