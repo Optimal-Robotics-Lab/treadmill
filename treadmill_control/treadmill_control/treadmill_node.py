@@ -254,13 +254,13 @@ class Treadmill(Node):
         string = msg.data
 
 
-        if string == "start":
+        if string == "go":
             self.set_start_stop = True
         elif string == "stop":
             self.set_start_stop = False
-        elif string == "on":
+        elif string == "power_on":
             self.set_on_off = True
-        elif string == "off":
+        elif string == "power_off":
          self.set_on_off = False
         elif string == "quick_stop":
             self.set_quick_stop = True
@@ -270,10 +270,13 @@ class Treadmill(Node):
             self.set_accel_profile = False
         elif string == "set_accel_profile_2":
             self.set_accel_profile = False
-        elif string == "set_direction_forward":
-            self.set_direction = True
-        elif string == "set_direction_reverse":
-            self.set_direction = False
+        # === currently direction set by speed sign ===
+            
+        # elif string == "set_direction_forward":
+        #     self.set_direction = True
+        # elif string == "set_direction_reverse":
+        #     self.set_direction = False
+            
         else: 
             print("Unknown command")
 
@@ -432,12 +435,15 @@ class Treadmill(Node):
                 error_code = f"A{present_alarm}"
                 alarm = False # clear alarm flag after reporting
         
+        if direction:
+            direction_sign = 1
+        else:
+            direction_sign = -1
     
         # Publish treadmill status
         ms = TreadmillStatus()
-        ms.speed_mps = speed_mps
+        ms.speed_mps = speed_mps * direction_sign
         ms.error = error_code
-        ms.direction = direction
 
         self.pub_status.publish(ms)
 
