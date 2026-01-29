@@ -9,8 +9,8 @@ import glob
 # CPM = CFW-11 Programing Manual
 # SCM = CFW-11 Serial Communication Manual
 
-
-RPM_TO_MPS = ? # Conversion factor from RPM to meters per second
+# placeholder
+RPM_TO_MPS = 0.22 # Conversion factor from RPM to meters per second
 
 
 param_dict = {

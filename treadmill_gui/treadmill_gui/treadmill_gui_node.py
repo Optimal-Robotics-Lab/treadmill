@@ -17,127 +17,51 @@ from PyQt6.QtWidgets import (
     QGridLayout,
 )
 from PyQt6.QtCore import QTimer, Qt
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 
-class TreadmillGUI(QMainWindow, Node):
+class TreadmillGUI(Node):
     def __init__(self):
-        # Initialize ROS 2 Node
-        Node.__init__(self, "treadmill_gui_node")
+        # Initialize ROS 2 Node first
+        super().__init__("treadmill_gui_node")
 
-        # --- Error Databases (from treadmill_node.py) ---
+        # Create the actual Window object
+        self.window = QMainWindow()
+        self.window.setWindowTitle("Treadmill Control System")
+        self.window.resize(1100, 700)
+
+        # --- Error Databases ---
         self.faults = {
-            6: {
-                "desc": "Imbalance or Input Phase Loss",
-                "causes": "Mains voltage imbalance too high; phase missing at input; input voltage imbalance > 5%.",
-            },
-            21: {
-                "desc": "DC Link Undervoltage",
-                "causes": "Input voltage too low; Phase loss; Pre-charge circuit failure; P0296 set too high.",
-            },
-            22: {
-                "desc": "DC Link Overvoltage",
-                "causes": "Inertia of driven-load too high; Deceleration time too short; P0151/P0153/P0185 set too high.",
-            },
-            30: {
-                "desc": "Power Module U Fault",
-                "causes": "IGBT desaturation; Short-circuit between phases U-V or U-W.",
-            },
-            34: {
-                "desc": "Power Module V Fault",
-                "causes": "IGBT desaturation; Short-circuit between phases V-U or V-W.",
-            },
-            38: {
-                "desc": "Power Module W Fault",
-                "causes": "IGBT desaturation; Short-circuit between phases W-U or W-V.",
-            },
-            42: {
-                "desc": "DB IGBT Fault",
-                "causes": "Desaturation of Dynamic Braking IGBT; Short-circuit in braking resistor cables.",
-            },
-            48: {
-                "desc": "IGBT Overload Fault",
-                "causes": "High current at inverter output; check switching frequency vs. load.",
-            },
-            51: {
-                "desc": "IGBT Overtemperature",
-                "causes": "High temperature detected by NTC sensors on IGBTs.",
-            },
-            71: {
-                "desc": "Output Overcurrent",
-                "causes": "Excessive load inertia; Acceleration time too short; P0135/P0169/P0170 too high.",
-            },
-            72: {
-                "desc": "Motor Overload",
-                "causes": "P0156/P0157/P0158 settings too low; Motor shaft load is excessive.",
-            },
-            74: {
-                "desc": "Ground Fault",
-                "causes": "Short circuit to ground in motor/cables; Motor cable capacitance too large.",
-            },
-            78: {
-                "desc": "Motor Overtemperature",
-                "causes": "Excessive motor load/duty cycle; Ambient temp too high; PTC wiring issues.",
-            },
-            156: {
-                "desc": "Undertemperature",
-                "causes": "Surrounding air temperature <= -30 °C (-22 °F).",
-            },
-            185: {
-                "desc": "Pre-charge Contactor Fault",
-                "causes": "Open command fuse; Phase loss in L1/R or L2/S; Contactor defect.",
-            },
+            6: {"desc": "Imbalance or Input Phase Loss", "causes": "Mains voltage imbalance > 5%."},
+            21: {"desc": "DC Link Undervoltage", "causes": "Input voltage too low; Phase loss."},
+            22: {"desc": "DC Link Overvoltage", "causes": "Inertia too high; Decel time too short."},
+            30: {"desc": "Power Module U Fault", "causes": "Short-circuit between phases."},
+            34: {"desc": "Power Module V Fault", "causes": "Short-circuit between phases."},
+            38: {"desc": "Power Module W Fault", "causes": "Short-circuit between phases."},
+            42: {"desc": "DB IGBT Fault", "causes": "Short-circuit in braking resistor."},
+            48: {"desc": "IGBT Overload Fault", "causes": "High current; check switching freq."},
+            51: {"desc": "IGBT Overtemperature", "causes": "NTC sensors detected high heat."},
+            71: {"desc": "Output Overcurrent", "causes": "Excessive load; Accel time too short."},
+            72: {"desc": "Motor Overload", "causes": "Motor shaft load is excessive."},
+            74: {"desc": "Ground Fault", "causes": "Short circuit to ground in motor/cables."},
+            78: {"desc": "Motor Overtemperature", "causes": "Excessive duty cycle; Ambient temp high."},
+            156: {"desc": "Undertemperature", "causes": "Air temperature <= -30 °C."},
+            185: {"desc": "Pre-charge Contactor Fault", "causes": "Phase loss; Contactor defect."},
         }
 
         self.alarms = {
-            46: {
-                "desc": "High Load on Motor",
-                "causes": "Settings of P0156/P0157/P0158 too low; Motor shaft load excessive.",
-            },
-            47: {
-                "desc": "IGBT Overload Alarm",
-                "causes": "High current at inverter output; Check switching frequency table.",
-            },
-            50: {
-                "desc": "IGBT High Temperature",
-                "causes": "High ambient temp (> 45°C); Fan blocked/defective; Dirty heatsink.",
-            },
-            88: {
-                "desc": "Communication Lost",
-                "causes": "Loose keypad cable; Electrical noise in installation.",
-            },
-            90: {
-                "desc": "External Alarm",
-                "causes": "Digital input set to 'No External Alarm' is open/unwired.",
-            },
-            110: {
-                "desc": "High Motor Temperature",
-                "causes": "Excessive shaft load; High ambient temp; PTC sensor wiring issues.",
-            },
-            128: {
-                "desc": "Timeout for Serial Communication",
-                "causes": "No valid messages received within P0314 interval; Check wiring/grounding.",
-            },
-            152: {
-                "desc": "Internal Air High Temperature",
-                "causes": "Ambient temp > 45°C; Internal fan defective.",
-            },
-            177: {
-                "desc": "Fan Replacement",
-                "causes": "Heatsink fan has exceeded 50,000 operating hours.",
-            },
-            702: {
-                "desc": "Inverter Disabled",
-                "causes": "General Enable command not active while SoftPLC is in Run mode.",
-            },
+            46: {"desc": "High Load on Motor", "causes": "Motor shaft load excessive."},
+            47: {"desc": "IGBT Overload Alarm", "causes": "High current at inverter output."},
+            50: {"desc": "IGBT High Temperature", "causes": "Ambient temp > 45°C; Fan blocked."},
+            88: {"desc": "Communication Lost", "causes": "Loose keypad cable; Noise."},
+            90: {"desc": "External Alarm", "causes": "External safety input triggered."},
+            110: {"desc": "High Motor Temperature", "causes": "Excessive shaft load."},
+            128: {"desc": "Timeout for Serial Communication", "causes": "No valid messages; Check wiring."},
+            152: {"desc": "Internal Air High Temperature", "causes": "Internal fan defective."},
+            177: {"desc": "Fan Replacement", "causes": "Heatsink fan > 50,000 hours."},
+            702: {"desc": "Inverter Disabled", "causes": "General Enable command not active."},
         }
-
-        # Initialize PyQt Window
-        QMainWindow.__init__(self)
-        self.setWindowTitle("Treadmill Control System")
-        self.resize(1100, 700)
 
         # State Variables
         self.current_speed_mps = 0.0
@@ -149,9 +73,9 @@ class TreadmillGUI(QMainWindow, Node):
         self.last_error = ""
         self.speed_history = []
         self.time_history = []
-
         self.active_timer = None
 
+        # Setup UI and ROS
         self.init_ui()
         self.init_ros()
 
@@ -169,7 +93,7 @@ class TreadmillGUI(QMainWindow, Node):
 
     def init_ui(self):
         central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        self.window.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
         # --- Left Panel: Controls ---
@@ -184,29 +108,16 @@ class TreadmillGUI(QMainWindow, Node):
         )
         self.btn_stop.clicked.connect(self.handle_stop)
 
-        # Speed Controls Grid
         speed_grid = QGridLayout()
-        self.btn_up_small = self.create_hold_button(
-            "▲ 0.01", lambda: self.adjust_speed(0.01)
-        )
-        self.btn_dn_small = self.create_hold_button(
-            "▼ 0.01", lambda: self.adjust_speed(-0.01)
-        )
-        self.btn_up_large = self.create_hold_button(
-            "▲ 0.1", lambda: self.adjust_speed(0.1)
-        )
-        self.btn_dn_large = self.create_hold_button(
-            "▼ 0.1", lambda: self.adjust_speed(-0.1)
-        )
+        self.btn_up_small = self.create_hold_button("▲ 0.01", lambda: self.adjust_speed(0.01))
+        self.btn_dn_small = self.create_hold_button("▼ 0.01", lambda: self.adjust_speed(-0.01))
+        self.btn_up_large = self.create_hold_button("▲ 0.1", lambda: self.adjust_speed(0.1))
+        self.btn_dn_large = self.create_hold_button("▼ 0.1", lambda: self.adjust_speed(-0.1))
 
-        speed_grid.addWidget(
-            QLabel("Fine (0.01)"), 0, 0, 1, 2, Qt.AlignmentFlag.AlignCenter
-        )
+        speed_grid.addWidget(QLabel("Fine (0.01)"), 0, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
         speed_grid.addWidget(self.btn_up_small, 1, 0)
         speed_grid.addWidget(self.btn_dn_small, 1, 1)
-        speed_grid.addWidget(
-            QLabel("Coarse (0.1)"), 2, 0, 1, 2, Qt.AlignmentFlag.AlignCenter
-        )
+        speed_grid.addWidget(QLabel("Coarse (0.1)"), 2, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
         speed_grid.addWidget(self.btn_up_large, 3, 0)
         speed_grid.addWidget(self.btn_dn_large, 3, 1)
 
@@ -232,15 +143,8 @@ class TreadmillGUI(QMainWindow, Node):
         self.lbl_dist = QLabel("Distance: 0.00 m")
         self.lbl_time = QLabel("Time: 0.0s")
 
-        for lbl in [
-            self.lbl_curr_speed,
-            self.lbl_set_speed,
-            self.lbl_dist,
-            self.lbl_time,
-        ]:
-            lbl.setStyleSheet(
-                "font-family: monospace; font-size: 20px; font-weight: bold;"
-            )
+        for lbl in [self.lbl_curr_speed, self.lbl_set_speed, self.lbl_dist, self.lbl_time]:
+            lbl.setStyleSheet("font-family: monospace; font-size: 20px; font-weight: bold;")
             display_layout.addWidget(lbl)
 
         # --- Right Panel: Graph ---
@@ -264,7 +168,7 @@ class TreadmillGUI(QMainWindow, Node):
     def start_speed_timer(self, func):
         func()
         self.active_timer = QTimer()
-        self.active_timer.setInterval(200)  # 5 triggers per second
+        self.active_timer.setInterval(200)
         self.active_timer.timeout.connect(func)
         self.active_timer.start()
 
@@ -287,12 +191,9 @@ class TreadmillGUI(QMainWindow, Node):
             return
 
         details = self.faults.get(code) if prefix == "F" else self.alarms.get(code)
-
         if details:
-            m = QMessageBox(self)
-            m.setIcon(
-                QMessageBox.Icon.Critical if prefix == "F" else QMessageBox.Icon.Warning
-            )
+            m = QMessageBox(self.window)
+            m.setIcon(QMessageBox.Icon.Critical if prefix == "F" else QMessageBox.Icon.Warning)
             m.setWindowTitle(f"Inverter {prefix}{code:03d}")
             m.setText(f"<b>Description:</b> {details['desc']}")
             m.setInformativeText(f"<b>Possible Causes:</b><br>{details['causes']}")
@@ -307,7 +208,7 @@ class TreadmillGUI(QMainWindow, Node):
             self.time_history.append(self.time_running)
             self.speed_history.append(self.current_speed_mps)
 
-            if len(self.time_history) > 300:  # 30s window
+            if len(self.time_history) > 300:
                 self.time_history.pop(0)
                 self.speed_history.pop(0)
 
@@ -364,16 +265,21 @@ class TreadmillGUI(QMainWindow, Node):
             self.pub_speed.publish(Float32(data=val))
             self.pub_cmd.publish(String(data="go"))
             self.speed_input.clear()
-        except:
+        except ValueError:
             pass
 
 
 def main():
     rclpy.init()
     app = QApplication(sys.argv)
-    gui = TreadmillGUI()
-    gui.show()
-    sys.exit(app.exec())
+    gui_node = TreadmillGUI()
+    gui_node.window.show() # Show the internal window attribute
+    
+    try:
+        sys.exit(app.exec())
+    finally:
+        gui_node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
