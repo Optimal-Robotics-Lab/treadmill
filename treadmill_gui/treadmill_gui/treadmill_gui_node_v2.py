@@ -16,11 +16,63 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QGridLayout,
     QFrame,
+    QGraphicsDropShadowEffect,
 )
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QFont, QPalette, QColor
+from PyQt6.QtCore import (
+    QTimer,
+    Qt,
+    QPropertyAnimation,
+    QEasingCurve,
+    QPoint,
+    pyqtProperty,
+)
+from PyQt6.QtGui import QFont, QColor, QPalette
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+
+
+class ModernCard(QFrame):
+    """Reusable card widget with shadow and modern styling"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet("""
+            ModernCard {
+                background-color: #1e1e1e;
+                border-radius: 12px;
+                border: 1px solid #2a2a2a;
+            }
+        """)
+
+        # Add shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+
+
+class AnimatedLabel(QLabel):
+    """Label with animated value changes"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._opacity = 1.0
+
+    def flash_update(self):
+        """Brief flash animation when value updates"""
+        self.setStyleSheet(
+            self.styleSheet() + "background-color: rgba(74, 144, 226, 0.2);"
+        )
+        QTimer.singleShot(
+            150,
+            lambda: self.setStyleSheet(
+                self.styleSheet().replace(
+                    "background-color: rgba(74, 144, 226, 0.2);", ""
+                )
+            ),
+        )
 
 
 class TreadmillGUI(Node):
@@ -31,10 +83,10 @@ class TreadmillGUI(Node):
         # Create the actual Window object
         self.window = QMainWindow()
         self.window.setWindowTitle("Treadmill Control System")
-        self.window.resize(1200, 750)
+        self.window.resize(1400, 800)
 
-        # Set modern dark theme
-        self.setup_theme()
+        # Apply dark theme
+        self.apply_modern_theme()
 
         # --- Error Databases ---
         self.faults = {
@@ -146,52 +198,48 @@ class TreadmillGUI(Node):
         self.timer.timeout.connect(self.update_gui_loop)
         self.timer.start(100)
 
-    def setup_theme(self):
-        """Apply modern dark theme to the application"""
+    def apply_modern_theme(self):
+        """Apply modern dark theme with custom styling"""
         self.window.setStyleSheet("""
             QMainWindow {
-                background-color: #1e1e2e;
-            }
-            QWidget {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 2px solid #45475a;
-                border-radius: 8px;
-                padding: 12px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #45475a;
-                border: 2px solid #585b70;
-            }
-            QPushButton:pressed {
-                background-color: #585b70;
-            }
-            QLineEdit {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 2px solid #45475a;
-                border-radius: 6px;
-                padding: 8px;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border: 2px solid #89b4fa;
+                background-color: #121212;
             }
             QLabel {
-                color: #cdd6f4;
+                color: #e0e0e0;
             }
-            QFrame {
-                background-color: #181825;
-                border-radius: 10px;
-                padding: 15px;
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: 500;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border: 1px solid #4a90e2;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+            QPushButton:disabled {
+                background-color: #1a1a1a;
+                color: #666666;
+                border: 1px solid #2a2a2a;
+            }
+            QLineEdit {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 2px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 10px;
+                font-size: 14px;
+                selection-background-color: #4a90e2;
+            }
+            QLineEdit:focus {
+                border: 2px solid #4a90e2;
             }
         """)
 
@@ -205,244 +253,360 @@ class TreadmillGUI(Node):
     def init_ui(self):
         central_widget = QWidget()
         self.window.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setSpacing(20)
+        main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
 
-        # --- Left Panel: Controls ---
-        ctrl_frame = QFrame()
-        ctrl_frame.setMaximumWidth(300)
-        ctrl_layout = QVBoxLayout(ctrl_frame)
-        ctrl_layout.setSpacing(15)
+        # Header
+        header = self.create_header()
+        main_layout.addWidget(header)
 
-        # Power button with dynamic styling
+        # Main content area
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(20)
+
+        # Left Panel: Status Display
+        status_card = self.create_status_panel()
+        content_layout.addWidget(status_card, 2)
+
+        # Middle Panel: Controls
+        control_card = self.create_control_panel()
+        content_layout.addWidget(control_card, 2)
+
+        # Right Panel: Graph
+        graph_card = self.create_graph_panel()
+        content_layout.addWidget(graph_card, 3)
+
+        main_layout.addLayout(content_layout)
+
+    def create_header(self):
+        """Create modern header with title and status indicator"""
+        header_card = ModernCard()
+        header_layout = QHBoxLayout(header_card)
+        header_layout.setContentsMargins(24, 16, 24, 16)
+
+        # Title
+        title = QLabel("Treadmill Control System")
+        title_font = QFont("Segoe UI", 24, QFont.Weight.Bold)
+        title.setFont(title_font)
+        title.setStyleSheet("color: #ffffff;")
+
+        # Status indicator
+        self.status_indicator = QLabel("● OFFLINE")
+        self.status_indicator.setStyleSheet("""
+            color: #f44336;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 16px;
+            background-color: rgba(244, 67, 54, 0.1);
+            border-radius: 20px;
+        """)
+
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        header_layout.addWidget(self.status_indicator)
+
+        return header_card
+
+    def create_status_panel(self):
+        """Create status display panel with large readable metrics"""
+        card = ModernCard()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        # Title
+        title = QLabel("METRICS")
+        title.setStyleSheet(
+            "color: #888888; font-size: 12px; font-weight: 600; letter-spacing: 1px;"
+        )
+        layout.addWidget(title)
+
+        # Current Speed - Largest display
+        current_speed_container = QWidget()
+        current_speed_layout = QVBoxLayout(current_speed_container)
+        current_speed_layout.setSpacing(4)
+
+        speed_label = QLabel("Current Speed")
+        speed_label.setStyleSheet("color: #888888; font-size: 13px;")
+
+        self.lbl_curr_speed = AnimatedLabel("0.00")
+        self.lbl_curr_speed.setStyleSheet("""
+            color: #4a90e2;
+            font-size: 56px;
+            font-weight: 700;
+            font-family: 'Segoe UI', Arial;
+        """)
+
+        speed_unit = QLabel("m/s")
+        speed_unit.setStyleSheet("color: #666666; font-size: 18px; font-weight: 500;")
+
+        current_speed_layout.addWidget(speed_label)
+        current_speed_layout.addWidget(self.lbl_curr_speed)
+        current_speed_layout.addWidget(speed_unit)
+
+        layout.addWidget(current_speed_container)
+
+        # Divider
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet("background-color: #2a2a2a; max-height: 1px;")
+        layout.addWidget(divider)
+
+        # Set Speed
+        self.lbl_set_speed = self.create_metric_row(
+            "Target Speed", "0.00 m/s", "#66bb6a"
+        )
+        layout.addWidget(self.lbl_set_speed)
+
+        # Distance
+        self.lbl_dist = self.create_metric_row("Distance", "0.00 m", "#ffa726")
+        layout.addWidget(self.lbl_dist)
+
+        # Time
+        self.lbl_time = self.create_metric_row("Time", "0.0 s", "#ab47bc")
+        layout.addWidget(self.lbl_time)
+
+        layout.addStretch()
+        return card
+
+    def create_metric_row(self, label_text, value_text, color):
+        """Create a metric row with label and value"""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setSpacing(4)
+        layout.setContentsMargins(0, 8, 0, 8)
+
+        label = QLabel(label_text)
+        label.setStyleSheet("color: #888888; font-size: 13px;")
+
+        value = QLabel(value_text)
+        value.setStyleSheet(f"""
+            color: {color};
+            font-size: 28px;
+            font-weight: 600;
+        """)
+
+        layout.addWidget(label)
+        layout.addWidget(value)
+
+        # Store reference to value label for updates
+        container.value_label = value
+
+        return container
+
+    def create_control_panel(self):
+        """Create control panel with buttons and inputs"""
+        card = ModernCard()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Title
+        title = QLabel("CONTROLS")
+        title.setStyleSheet(
+            "color: #888888; font-size: 12px; font-weight: 600; letter-spacing: 1px;"
+        )
+        layout.addWidget(title)
+
+        # Power Button
         self.btn_power = QPushButton("⚡ POWER ON")
-        self.btn_power.setMinimumHeight(50)
         self.btn_power.setStyleSheet("""
             QPushButton {
-                background-color: #a6e3a1;
-                color: #1e1e2e;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2e7d32, stop:1 #43a047);
+                color: white;
+                font-weight: 600;
+                font-size: 15px;
+                min-height: 50px;
                 border: none;
                 border-radius: 10px;
-                font-size: 16px;
-                font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #b8f0b6;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #388e3c, stop:1 #4caf50);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #1b5e20, stop:1 #2e7d32);
             }
         """)
         self.btn_power.clicked.connect(self.toggle_power)
+        layout.addWidget(self.btn_power)
 
-        # Speed control section
-        speed_label = QLabel("⚙️ SPEED CONTROL")
-        speed_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #89b4fa; margin-top: 10px;"
+        # Speed Adjustment Section
+        speed_section = QWidget()
+        speed_layout = QVBoxLayout(speed_section)
+        speed_layout.setSpacing(12)
+
+        speed_title = QLabel("Speed Adjustment")
+        speed_title.setStyleSheet("color: #aaaaaa; font-size: 13px; font-weight: 500;")
+        speed_layout.addWidget(speed_title)
+
+        # Fine control
+        fine_grid = QGridLayout()
+        fine_grid.setSpacing(8)
+
+        fine_label = QLabel("Fine (±0.01 m/s)")
+        fine_label.setStyleSheet("color: #888888; font-size: 12px;")
+        fine_grid.addWidget(fine_label, 0, 0, 1, 2)
+
+        self.btn_up_small = self.create_styled_button(
+            "▲", lambda: self.adjust_speed(0.01), "#4a90e2"
         )
-
-        speed_grid = QGridLayout()
-        speed_grid.setSpacing(8)
-
-        fine_label = QLabel("Fine Adjust (±0.01 m/s)")
-        fine_label.setStyleSheet("font-size: 11px; color: #a6adc8;")
-        self.btn_up_small = self.create_hold_button(
-            "▲", lambda: self.adjust_speed(0.01)
+        self.btn_dn_small = self.create_styled_button(
+            "▼", lambda: self.adjust_speed(-0.01), "#4a90e2"
         )
-        self.btn_dn_small = self.create_hold_button(
-            "▼", lambda: self.adjust_speed(-0.01)
+        fine_grid.addWidget(self.btn_up_small, 1, 0)
+        fine_grid.addWidget(self.btn_dn_small, 1, 1)
+
+        # Coarse control
+        coarse_label = QLabel("Coarse (±0.1 m/s)")
+        coarse_label.setStyleSheet("color: #888888; font-size: 12px;")
+        fine_grid.addWidget(coarse_label, 2, 0, 1, 2)
+
+        self.btn_up_large = self.create_styled_button(
+            "▲▲", lambda: self.adjust_speed(0.1), "#7b1fa2"
         )
-
-        coarse_label = QLabel("Coarse Adjust (±0.1 m/s)")
-        coarse_label.setStyleSheet("font-size: 11px; color: #a6adc8;")
-        self.btn_up_large = self.create_hold_button(
-            "▲▲", lambda: self.adjust_speed(0.1)
+        self.btn_dn_large = self.create_styled_button(
+            "▼▼", lambda: self.adjust_speed(-0.1), "#7b1fa2"
         )
-        self.btn_dn_large = self.create_hold_button(
-            "▼▼", lambda: self.adjust_speed(-0.1)
-        )
+        fine_grid.addWidget(self.btn_up_large, 3, 0)
+        fine_grid.addWidget(self.btn_dn_large, 3, 1)
 
-        # Style speed buttons
-        speed_btn_style = """
-            QPushButton {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-                border: none;
-                border-radius: 6px;
-                font-size: 18px;
-                font-weight: bold;
-                min-height: 45px;
-            }
-            QPushButton:hover {
-                background-color: #a4c8fc;
-            }
-            QPushButton:pressed {
-                background-color: #6c9edb;
-            }
-        """
-        for btn in [
-            self.btn_up_small,
-            self.btn_dn_small,
-            self.btn_up_large,
-            self.btn_dn_large,
-        ]:
-            btn.setStyleSheet(speed_btn_style)
+        speed_layout.addLayout(fine_grid)
 
-        speed_grid.addWidget(fine_label, 0, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
-        speed_grid.addWidget(self.btn_up_small, 1, 0)
-        speed_grid.addWidget(self.btn_dn_small, 1, 1)
-        speed_grid.addWidget(coarse_label, 2, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
-        speed_grid.addWidget(self.btn_up_large, 3, 0)
-        speed_grid.addWidget(self.btn_dn_large, 3, 1)
+        # Manual input
+        input_label = QLabel("Direct Speed Entry")
+        input_label.setStyleSheet("color: #888888; font-size: 12px; margin-top: 8px;")
+        speed_layout.addWidget(input_label)
 
-        # Manual speed entry
-        manual_label = QLabel("Manual Entry:")
-        manual_label.setStyleSheet("font-size: 12px; color: #a6adc8; margin-top: 10px;")
         self.speed_input = QLineEdit()
         self.speed_input.setPlaceholderText("Enter speed (m/s)...")
         self.speed_input.returnPressed.connect(self.manual_speed_entry)
-        self.speed_input.setMinimumHeight(40)
+        speed_layout.addWidget(self.speed_input)
 
-        # Emergency stop button
+        layout.addWidget(speed_section)
+        layout.addStretch()
+
+        # Emergency Stop
         self.btn_stop = QPushButton("⬛ EMERGENCY STOP")
-        self.btn_stop.setMinimumHeight(70)
         self.btn_stop.setStyleSheet("""
             QPushButton {
-                background-color: #f38ba8;
-                color: #1e1e2e;
-                border: none;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #c62828, stop:1 #b71c1c);
+                color: white;
+                font-weight: 700;
+                font-size: 16px;
+                min-height: 60px;
+                border: 2px solid #d32f2f;
                 border-radius: 10px;
-                font-size: 18px;
-                font-weight: bold;
+                letter-spacing: 1px;
             }
             QPushButton:hover {
-                background-color: #f5a3b5;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #d32f2f, stop:1 #c62828);
+                border: 2px solid #f44336;
             }
             QPushButton:pressed {
-                background-color: #d86b87;
+                background: #b71c1c;
             }
         """)
         self.btn_stop.clicked.connect(self.handle_stop)
+        layout.addWidget(self.btn_stop)
 
-        # Reset button
-        self.btn_reset = QPushButton("🔄 RESET")
-        self.btn_reset.setMinimumHeight(45)
+        # Reset Button
+        self.btn_reset = QPushButton("↻ RESET")
         self.btn_reset.setStyleSheet("""
             QPushButton {
-                background-color: #fab387;
-                color: #1e1e2e;
-                border: none;
-                border-radius: 8px;
+                background-color: #424242;
+                color: #ffffff;
+                font-weight: 600;
                 font-size: 14px;
-                font-weight: bold;
+                min-height: 40px;
+                border: 1px solid #616161;
+                border-radius: 8px;
             }
             QPushButton:hover {
-                background-color: #fcc69f;
+                background-color: #616161;
+                border: 1px solid #757575;
             }
         """)
         self.btn_reset.clicked.connect(self.handle_reset)
+        layout.addWidget(self.btn_reset)
 
-        ctrl_layout.addWidget(self.btn_power)
-        ctrl_layout.addWidget(speed_label)
-        ctrl_layout.addLayout(speed_grid)
-        ctrl_layout.addWidget(manual_label)
-        ctrl_layout.addWidget(self.speed_input)
-        ctrl_layout.addStretch()
-        ctrl_layout.addWidget(self.btn_stop)
-        ctrl_layout.addWidget(self.btn_reset)
+        return card
 
-        # --- Middle Panel: Status Display ---
-        display_frame = QFrame()
-        display_frame.setMaximumWidth(350)
-        display_layout = QVBoxLayout(display_frame)
-        display_layout.setSpacing(20)
-
-        # Title
-        title_label = QLabel("📊 SYSTEM STATUS")
-        title_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #89b4fa; margin-bottom: 10px;"
-        )
-        display_layout.addWidget(title_label)
-
-        # Status displays with icons
-        self.lbl_curr_speed = self.create_status_label("🏃 Current Speed", "0.00 m/s")
-        self.lbl_set_speed = self.create_status_label("🎯 Target Speed", "0.00 m/s")
-        self.lbl_dist = self.create_status_label("📏 Distance", "0.00 m")
-        self.lbl_time = self.create_status_label("⏱️ Time Running", "0.0 s")
-
-        for lbl_pair in [
-            self.lbl_curr_speed,
-            self.lbl_set_speed,
-            self.lbl_dist,
-            self.lbl_time,
-        ]:
-            container = QFrame()
-            container.setStyleSheet("""
-                QFrame {
-                    background-color: #313244;
-                    border-radius: 8px;
-                    padding: 12px;
-                    margin: 3px;
-                }
-            """)
-            container_layout = QVBoxLayout(container)
-            container_layout.setContentsMargins(10, 10, 10, 10)
-            container_layout.addWidget(lbl_pair[0])
-            container_layout.addWidget(lbl_pair[1])
-            display_layout.addWidget(container)
-
-        display_layout.addStretch()
-
-        # --- Right Panel: Graph ---
-        graph_frame = QFrame()
-        graph_layout = QVBoxLayout(graph_frame)
-
-        graph_title = QLabel("📈 SPEED MONITOR")
-        graph_title.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #89b4fa; margin-bottom: 10px;"
-        )
-        graph_layout.addWidget(graph_title)
-
-        self.fig = Figure(figsize=(6, 5), dpi=100, facecolor="#181825")
-        self.canvas = FigureCanvas(self.fig)
-        self.ax = self.fig.add_subplot(111, facecolor="#1e1e2e")
-        self.ax.set_title(
-            "Speed vs Time", color="#cdd6f4", fontsize=14, fontweight="bold"
-        )
-        self.ax.set_xlabel("Time (s)", color="#a6adc8", fontsize=11)
-        self.ax.set_ylabel("Speed (m/s)", color="#a6adc8", fontsize=11)
-        self.ax.tick_params(colors="#a6adc8", labelsize=9)
-        self.ax.spines["bottom"].set_color("#45475a")
-        self.ax.spines["top"].set_color("#45475a")
-        self.ax.spines["left"].set_color("#45475a")
-        self.ax.spines["right"].set_color("#45475a")
-        self.ax.grid(True, alpha=0.2, color="#45475a", linestyle="--")
-        (self.line,) = self.ax.plot([], [], color="#89b4fa", linewidth=2)
-
-        graph_layout.addWidget(self.canvas)
-
-        # Add all panels to main layout
-        main_layout.addWidget(ctrl_frame, 1)
-        main_layout.addWidget(display_frame, 1)
-        main_layout.addWidget(graph_frame, 2)
-
-    def create_status_label(self, title, initial_value):
-        """Create a styled status label pair"""
-        title_label = QLabel(title)
-        title_label.setStyleSheet(
-            "font-size: 12px; color: #a6adc8; font-weight: normal;"
-        )
-
-        value_label = QLabel(initial_value)
-        value_label.setStyleSheet(
-            "font-size: 24px; color: #cdd6f4; font-weight: bold; font-family: 'Courier New', monospace;"
-        )
-
-        return (title_label, value_label)
-
-    def create_hold_button(self, text, func):
+    def create_styled_button(self, text, callback, color):
+        """Create a styled hold button"""
         btn = QPushButton(text)
-        btn.pressed.connect(lambda: self.start_speed_timer(func))
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                color: white;
+                font-weight: 600;
+                font-size: 18px;
+                min-height: 45px;
+                border: none;
+                border-radius: 8px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.lighten_color(color, 1.2)};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.lighten_color(color, 0.8)};
+            }}
+        """)
+        btn.pressed.connect(lambda: self.start_speed_timer(callback))
         btn.released.connect(self.stop_speed_timer)
         return btn
+
+    def lighten_color(self, hex_color, factor):
+        """Lighten or darken a hex color"""
+        color = QColor(hex_color)
+        h, s, v, a = color.getHsv()
+        v = min(255, int(v * factor))
+        color.setHsv(h, s, v, a)
+        return color.name()
+
+    def create_graph_panel(self):
+        """Create graph panel with matplotlib"""
+        card = ModernCard()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Title
+        title = QLabel("SPEED PROFILE")
+        title.setStyleSheet(
+            "color: #888888; font-size: 12px; font-weight: 600; letter-spacing: 1px;"
+        )
+        layout.addWidget(title)
+
+        # Graph
+        self.fig = Figure(figsize=(6, 4), dpi=100, facecolor="#1e1e1e")
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111)
+
+        # Style the plot
+        self.ax.set_facecolor("#1e1e1e")
+        self.ax.tick_params(colors="#888888", labelsize=9)
+        self.ax.spines["bottom"].set_color("#3a3a3a")
+        self.ax.spines["left"].set_color("#3a3a3a")
+        self.ax.spines["top"].set_color("#3a3a3a")
+        self.ax.spines["right"].set_color("#3a3a3a")
+        self.ax.grid(True, alpha=0.15, color="#888888", linestyle="--", linewidth=0.5)
+        self.ax.set_xlabel("Time (s)", color="#888888", fontsize=10)
+        self.ax.set_ylabel("Speed (m/s)", color="#888888", fontsize=10)
+
+        (self.line,) = self.ax.plot(
+            [], [], color="#4a90e2", linewidth=2.5, antialiased=True
+        )
+
+        # Add glow effect to line
+        self.ax.plot([], [], color="#4a90e2", linewidth=5, alpha=0.3, antialiased=True)
+
+        layout.addWidget(self.canvas)
+        return card
 
     def start_speed_timer(self, func):
         func()
@@ -457,7 +621,13 @@ class TreadmillGUI(Node):
             self.active_timer = None
 
     def status_callback(self, msg):
+        prev_speed = self.current_speed_mps
         self.current_speed_mps = abs(msg.speed_mps)
+
+        # Flash animation on significant change
+        if abs(self.current_speed_mps - prev_speed) > 0.05:
+            self.lbl_curr_speed.flash_update()
+
         if msg.error and msg.error != self.last_error:
             self.last_error = msg.error
             self.handle_error_popup(msg.error)
@@ -476,30 +646,34 @@ class TreadmillGUI(Node):
                 QMessageBox.Icon.Critical if prefix == "F" else QMessageBox.Icon.Warning
             )
             m.setWindowTitle(f"Inverter {prefix}{code:03d}")
-            m.setText(f"<b>Description:</b> {details['desc']}")
-            m.setInformativeText(f"<b>Possible Causes:</b><br>{details['causes']}")
 
             # Style the message box
             m.setStyleSheet("""
                 QMessageBox {
-                    background-color: #1e1e2e;
-                    color: #cdd6f4;
+                    background-color: #1e1e1e;
+                    color: #e0e0e0;
                 }
                 QMessageBox QLabel {
-                    color: #cdd6f4;
+                    color: #e0e0e0;
+                    font-size: 13px;
                 }
                 QPushButton {
-                    background-color: #313244;
-                    color: #cdd6f4;
-                    border: 2px solid #45475a;
+                    background-color: #2a2a2a;
+                    color: #ffffff;
+                    border: 1px solid #3a3a3a;
                     border-radius: 6px;
                     padding: 8px 16px;
-                    min-width: 80px;
+                    min-width: 70px;
                 }
                 QPushButton:hover {
-                    background-color: #45475a;
+                    background-color: #3a3a3a;
                 }
             """)
+
+            m.setText(
+                f"<b style='color: #f44336; font-size: 15px;'>Description:</b><br>{details['desc']}"
+            )
+            m.setInformativeText(f"<b>Possible Causes:</b><br>{details['causes']}")
             m.exec()
 
     def update_gui_loop(self):
@@ -518,13 +692,46 @@ class TreadmillGUI(Node):
             self.line.set_data(self.time_history, self.speed_history)
             self.ax.relim()
             self.ax.autoscale_view()
-            self.canvas.draw()
+            self.canvas.draw_idle()  # More efficient than draw()
 
-        # Update status displays
-        self.lbl_curr_speed[1].setText(f"{self.current_speed_mps:.2f} m/s")
-        self.lbl_set_speed[1].setText(f"{self.set_speed_mps:.2f} m/s")
-        self.lbl_dist[1].setText(f"{self.distance_traveled:.2f} m")
-        self.lbl_time[1].setText(f"{self.time_running:.1f} s")
+        # Update displays
+        self.lbl_curr_speed.setText(f"{self.current_speed_mps:.2f}")
+        self.lbl_set_speed.value_label.setText(f"{self.set_speed_mps:.2f} m/s")
+        self.lbl_dist.value_label.setText(f"{self.distance_traveled:.2f} m")
+        self.lbl_time.value_label.setText(f"{self.time_running:.1f} s")
+
+        # Update status indicator
+        if self.is_powered_on:
+            if self.is_stopped or self.set_speed_mps == 0:
+                self.status_indicator.setText("● STANDBY")
+                self.status_indicator.setStyleSheet("""
+                    color: #ffa726;
+                    font-size: 14px;
+                    font-weight: 600;
+                    padding: 8px 16px;
+                    background-color: rgba(255, 167, 38, 0.1);
+                    border-radius: 20px;
+                """)
+            else:
+                self.status_indicator.setText("● RUNNING")
+                self.status_indicator.setStyleSheet("""
+                    color: #66bb6a;
+                    font-size: 14px;
+                    font-weight: 600;
+                    padding: 8px 16px;
+                    background-color: rgba(102, 187, 106, 0.1);
+                    border-radius: 20px;
+                """)
+        else:
+            self.status_indicator.setText("● OFFLINE")
+            self.status_indicator.setStyleSheet("""
+                color: #f44336;
+                font-size: 14px;
+                font-weight: 600;
+                padding: 8px 16px;
+                background-color: rgba(244, 67, 54, 0.1);
+                border-radius: 20px;
+            """)
 
     def toggle_power(self):
         self.is_powered_on = not self.is_powered_on
@@ -535,30 +742,44 @@ class TreadmillGUI(Node):
             self.btn_power.setText("⚡ POWER OFF")
             self.btn_power.setStyleSheet("""
                 QPushButton {
-                    background-color: #f38ba8;
-                    color: #1e1e2e;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #d32f2f, stop:1 #f44336);
+                    color: white;
+                    font-weight: 600;
+                    font-size: 15px;
+                    min-height: 50px;
                     border: none;
                     border-radius: 10px;
-                    font-size: 16px;
-                    font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #f5a3b5;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #e53935, stop:1 #ef5350);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #c62828, stop:1 #d32f2f);
                 }
             """)
         else:
             self.btn_power.setText("⚡ POWER ON")
             self.btn_power.setStyleSheet("""
                 QPushButton {
-                    background-color: #a6e3a1;
-                    color: #1e1e2e;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #2e7d32, stop:1 #43a047);
+                    color: white;
+                    font-weight: 600;
+                    font-size: 15px;
+                    min-height: 50px;
                     border: none;
                     border-radius: 10px;
-                    font-size: 16px;
-                    font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #b8f0b6;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #388e3c, stop:1 #4caf50);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #1b5e20, stop:1 #2e7d32);
                 }
             """)
 
@@ -578,16 +799,21 @@ class TreadmillGUI(Node):
         self.last_error = ""
         self.speed_history.clear()
         self.time_history.clear()
+
+        # Clear and restyle graph
         self.ax.clear()
-        self.ax.set_facecolor("#1e1e2e")
-        self.ax.set_title(
-            "Speed vs Time", color="#cdd6f4", fontsize=14, fontweight="bold"
+        self.ax.set_facecolor("#1e1e1e")
+        self.ax.tick_params(colors="#888888", labelsize=9)
+        self.ax.spines["bottom"].set_color("#3a3a3a")
+        self.ax.spines["left"].set_color("#3a3a3a")
+        self.ax.spines["top"].set_color("#3a3a3a")
+        self.ax.spines["right"].set_color("#3a3a3a")
+        self.ax.grid(True, alpha=0.15, color="#888888", linestyle="--", linewidth=0.5)
+        self.ax.set_xlabel("Time (s)", color="#888888", fontsize=10)
+        self.ax.set_ylabel("Speed (m/s)", color="#888888", fontsize=10)
+        (self.line,) = self.ax.plot(
+            [], [], color="#4a90e2", linewidth=2.5, antialiased=True
         )
-        self.ax.set_xlabel("Time (s)", color="#a6adc8", fontsize=11)
-        self.ax.set_ylabel("Speed (m/s)", color="#a6adc8", fontsize=11)
-        self.ax.tick_params(colors="#a6adc8", labelsize=9)
-        self.ax.grid(True, alpha=0.2, color="#45475a", linestyle="--")
-        (self.line,) = self.ax.plot([], [], color="#89b4fa", linewidth=2)
         self.canvas.draw()
 
     def adjust_speed(self, delta):
@@ -601,6 +827,8 @@ class TreadmillGUI(Node):
     def manual_speed_entry(self):
         try:
             val = float(self.speed_input.text())
+            if val < 0:
+                return
             self.set_speed_mps = val
             self.is_stopped = False
             self.pub_speed.publish(Float32(data=val))
