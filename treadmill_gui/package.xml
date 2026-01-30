@@ -18,6 +18,7 @@
 
   <exec_depend>python3-pyqt6</exec_depend>
   <exec_depend>python-matplotlib</exec_depend>
+  <exec_depend>python-pyqtgraph</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
