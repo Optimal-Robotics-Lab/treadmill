@@ -10,8 +10,9 @@ import time
 # CPM = CFW-11 Programing Manual
 # SCM = CFW-11 Serial Communication Manual
 
-# placeholder
-RPM_TO_MPS = 0.22  # Conversion factor from RPM to meters per second
+# temporary aproximation values for conversion
+RPM_TO_MPS = 0.0108  # Conversion factor from RPM to meters per second
+RPM_TO_MPS_INTERCEPT = -0.0056  # should not be nessasary
 
 param_dict = {
     "speed_ref": 1,  # Reference speed (see CPM 16-1)
