@@ -28,6 +28,9 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["treadmill_node = treadmill_control.treadmill_node:main"],
+        "console_scripts": [
+            "treadmill_node = treadmill_control.treadmill_node:main",
+            "status_node = treadmill_control.status_led:main",
+        ],
     },
 )

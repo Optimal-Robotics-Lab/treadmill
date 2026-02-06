@@ -10,9 +10,9 @@ import time
 # CPM = CFW-11 Programing Manual
 # SCM = CFW-11 Serial Communication Manual
 
-# temporary aproximation values for conversion
+# temporary aproximation
 RPM_TO_MPS = 0.0108  # Conversion factor from RPM to meters per second
-RPM_TO_MPS_INTERCEPT = -0.0056  # should not be nessasary
+RPM_TO_MPS_INTERCEPT = -0.0056  # Conversion factor from RPM to meters per second
 
 param_dict = {
     "speed_ref": 1,  # Reference speed (see CPM 16-1)
@@ -116,7 +116,7 @@ def get_alarm(code, description_only=False):
 
 
 class Treadmill(Node):
-    def __init__(self):
+def __init__(self):
         super().__init__("treadmill_node")
 
         # === ROS 2 Parameters ===
