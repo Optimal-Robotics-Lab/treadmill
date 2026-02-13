@@ -1,0 +1,33 @@
+---
+title: Treadmill Operation Manual
+format:
+pdf:
+toc: true
+toc-depth: 2
+number-sections: true
+---
+
+
+# Setup
+
+## Safety Checklist
+
+- [ ] Check that __nothing is on or near the treadmill that should not be__ (i.e.people, cables, other robots, debris, parts, etc.)
+- [ ] Ensure that if you are using the pulley that it is attached securely and correctly and is not tangled.
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+- [ ] 
+
+
+
+
+
