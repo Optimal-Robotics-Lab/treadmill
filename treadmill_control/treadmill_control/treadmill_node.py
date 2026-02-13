@@ -4,6 +4,7 @@ from std_msgs.msg import Float32, Bool, String
 from pymodbus.client import ModbusSerialClient
 from treadmill_interfaces.msg import TreadmillStatus
 import glob
+from enum import IntFlag, auto
 import time
 
 # Definitions
@@ -115,8 +116,25 @@ def get_alarm(code, description_only=False):
     )
 
 
+class ControlBits(IntFlag):
+    """
+    Defines the 16-bit control word mapping.
+    Using 1 << n ensures the bit position is explicit.
+    """
+
+    NONE = 0
+    START_STOP = 1 << 0  # 0x01
+    ON_OFF = 1 << 1  # 0x02
+    DIRECTION = 1 << 2  # 0x04
+    JOG = 1 << 3  # 0x08
+    LOC_REM = 1 << 4  # 0x10
+    ACCEL_PROFILE = 1 << 5  # 0x20
+    QUICK_STOP = 1 << 6  # 0x40
+    FAULT_RESET = 1 << 7  # 0x80
+
+
 class Treadmill(Node):
-def __init__(self):
+    def __init__(self):
         super().__init__("treadmill_node")
 
         # === ROS 2 Parameters ===
@@ -156,8 +174,6 @@ def __init__(self):
         else:
             self.get_logger().info(f"Connected to CFW-11 on {port}")
 
-        self.on_start()
-
         # === ROS 2 Subscribers ===
         self.create_subscription(
             String, "treadmill/special_cmd", self.special_cmd_callback, 10
@@ -172,10 +188,10 @@ def __init__(self):
         # Internal State Variables
         self.set_start_stop = False
         self.set_on_off = False
-        self.set_direction = True
+        self.set_direction = False
         self.set_jog = False
-        self.set_loc_rem = True
-        self.set_accel_profile = True
+        self.set_loc_rem = False
+        self.set_accel_profile = False
         self.set_quick_stop = False
         self.set_fault_reset = False
 
@@ -215,7 +231,7 @@ def __init__(self):
             address=param, count=1, slave=1
         )
         if not param_value.isError():
-            if type == int:
+            if type is int:
                 return int(param_value.registers[0])
             else:
                 return float(param_value.registers[0])
@@ -248,7 +264,6 @@ def __init__(self):
     def _send_special_command(self):
         if not self.client:
             return
-
         # Get control word as integer
         val = self.build_control_word()
 
@@ -262,31 +277,27 @@ def __init__(self):
             self.set_fault_reset = False
 
     def build_control_word(self) -> int:
-        """
-        Calculates the integer value of the 16-bit control word.
-        Uses self.set_... variables.
-        """
-        control_word = 0
+        """Calculates the integer value using IntFlag logic."""
+        word = ControlBits.NONE
 
-        # Fixed variable names to match __init__ definitions
         if self.set_start_stop:
-            control_word |= 1 << 0
-        if self.set_on_off:  # General enabling
-            control_word |= 1 << 1
+            word |= ControlBits.START_STOP
+        if self.set_on_off:
+            word |= ControlBits.ON_OFF
         if self.set_direction:
-            control_word |= 1 << 2
+            word |= ControlBits.DIRECTION
         if self.set_jog:
-            control_word |= 1 << 3
+            word |= ControlBits.JOG
         if self.set_loc_rem:
-            control_word |= 1 << 4
-        if self.set_accel_profile:  # Second ramp
-            control_word |= 1 << 5
+            word |= ControlBits.LOC_REM
+        if self.set_accel_profile:
+            word |= ControlBits.ACCEL_PROFILE
         if self.set_quick_stop:
-            control_word |= 1 << 6
+            word |= ControlBits.QUICK_STOP
         if self.set_fault_reset:
-            control_word |= 1 << 7
+            word |= ControlBits.FAULT_RESET
 
-        return control_word
+        return int(word)
 
     def _get_speed(self):
         rpm = self.read_param("motor_speed")
@@ -325,6 +336,9 @@ def __init__(self):
         rpm_cmd = int(raw_rpm * max_resolution / synchronous_speed)
 
         self.client.write_register(address=683, value=rpm_cmd, slave=1)
+        self.get_logger().info(
+            f"Set speed command: {speed:.2f} m/s -> {raw_rpm:.2f} RPM (raw: {rpm_cmd})"
+        )
         self.set_speed_rpm = raw_rpm
 
     def update_loop(self):
@@ -378,18 +392,14 @@ def __init__(self):
         ms.error = error_code
         self.pub_status.publish(ms)
 
-    def on_start(self):
-        if not self.client:
-            return
-        # set control to vector control mode (just in case)
-        self.client.write_register(address=202, value=4, slave=1)
-
 
 def main(args=None):
     rclpy.init(args=args)
-
     node = Treadmill()
     rclpy.spin(node)
     node.destroy_node()
-
     rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
