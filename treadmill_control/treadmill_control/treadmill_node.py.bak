@@ -200,8 +200,6 @@ class Treadmill(Node):
         else:
             self.get_logger().info(f"Connected to CFW-11 on {port}")
 
-        self.on_start()
-
         # === ROS 2 Subscribers ===
 
         self.create_subscription(
@@ -236,10 +234,10 @@ class Treadmill(Node):
         # special command set variables
         self.set_start_stop = False
         self.set_on_off = False
-        self.set_direction = True
+        self.set_direction = False
         self.set_jog = False
-        self.set_loc_rem = True
-        self.set_accel_profile = True
+        self.set_loc_rem = False
+        self.set_accel_profile = False
         self.set_quick_stop = False
         self.set_fault_reset = False
 
@@ -264,7 +262,7 @@ class Treadmill(Node):
             address=param, count=1, slave=1
         )
         if not param_value.isError():
-            if type == int:
+            if type is int:
                 return int(param_value.registers[0])
             else:
                 return float(param_value.registers[0])
@@ -359,9 +357,9 @@ class Treadmill(Node):
         self.client.write_register(address=682, value=msg, slave=1)
 
         # Clean up special commands to prevent repeated sending
-        if self.set_quick_stop == True:
+        if self.set_quick_stop:
             self.set_quick_stop = False
-        if self.set_fault_reset == True:
+        if self.set_fault_reset:
             self.set_fault_reset = False
 
     def build_control_word(self) -> int:
@@ -407,17 +405,17 @@ class Treadmill(Node):
     def set_speed_callback(self, msg):
         # for details see SCM page 14
         speed = msg.data
-
-        if speed < 0:
-            speed = abs(speed)
-            if self.set_direction == True:
-                self.set_direction = False
-                self._send_special_command()
-        if speed > 0:
-            if self.set_direction == False:
-                self.set_direction = True
-                self._send_special_command()
-
+        #
+        # if speed < 0:
+        #     speed = abs(speed)
+        #     if self.set_direction:
+        #         self.set_direction = False
+        #         self._send_special_command()
+        # if speed > 0:
+        #     if not self.set_direction:
+        #         self.set_direction = True
+        #         self._send_special_command()
+        #
         # convert speed to rpm
         raw_rpm = self._speed_to_rpm(speed)
         synchronous_speed = 1800
@@ -505,10 +503,6 @@ class Treadmill(Node):
 
         self.pub_status.publish(ms)
 
-    def on_start(self):
-        # set control to vector control mode (just in case)
-        self.client.write_register(address=202, value=4, slave=1)
-
 
 def main(args=None):
     rclpy.init(args=args)
@@ -518,3 +512,7 @@ def main(args=None):
     node.destroy_node()
 
     rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

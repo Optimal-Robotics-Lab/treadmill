@@ -13,7 +13,6 @@ import time
 
 # temporary aproximation
 RPM_TO_MPS = 0.0108  # Conversion factor from RPM to meters per second
-RPM_TO_MPS_INTERCEPT = -0.0056  # Conversion factor from RPM to meters per second
 
 param_dict = {
     "speed_ref": 1,  # Reference speed (see CPM 16-1)
@@ -345,50 +344,10 @@ class Treadmill(Node):
         if not self.client:
             return
 
-        # get current speed in mps (Fixed method name)
         speed_mps = self._get_speed()
-
-        # get logic status
-        logic_msg = self.client.read_holding_registers(address=680, count=1, slave=1)
-
-        # Check for error first
-        if logic_msg.isError():
-            self.get_logger().warn("Failed to read logic status")
-            return
-
-        logic_val = int(logic_msg.registers[0])
-
-        # Bit parsing
-        faulted = bool(logic_val & (1 << 15))
-        undervoltage = bool(logic_val & (1 << 13))
-        direction = bool(logic_val & (1 << 10))
-        power_on = bool(logic_val & (1 << 9))
-        running = bool(logic_val & (1 << 8))
-        alarm = bool(logic_val & (1 << 7))
-        accel_profile = bool(logic_val & (1 << 5))
-        quick_stop = bool(logic_val & (1 << 4))
-
-        error_code = ""
-
-        # if fault or alarm present , read and publish info
-        if faulted or alarm:
-            if faulted:
-                present_fault = self.read_param("fault_code", type=int)
-                fault_info = get_fault(present_fault)
-                self.get_logger().error(fault_info)
-                error_code = f"F{present_fault}"
-
-            if alarm:
-                present_alarm = self.read_param("alarm_code", type=int)
-                alarm_info = get_alarm(present_alarm)
-                self.get_logger().warn(alarm_info)
-                error_code = f"A{present_alarm}"
-
-        direction_sign = 1 if direction else -1
-
         # Publish treadmill status
         ms = TreadmillStatus()
-        ms.speed_mps = speed_mps * direction_sign
+        ms.speed_mps = speed_mps
         ms.error = error_code
         self.pub_status.publish(ms)
 
