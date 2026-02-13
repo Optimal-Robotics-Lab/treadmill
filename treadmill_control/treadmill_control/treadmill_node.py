@@ -429,7 +429,7 @@ class Treadmill(Node):
 
     def update_loop(self):
         # get current speed in mps
-        speed_mps = self.get_speed()
+        speed_mps = self._get_speed()
 
         # get logic status
         logic_msg = self.client.read_holding_registers(address=680, count=1, slave=1)
