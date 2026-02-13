@@ -33,88 +33,6 @@ param_dict = {
 }
 
 
-def get_fault(code, description_only=False):
-    """
-    Returns information for inverter Faults (F###).
-    """
-    faults = {
-        6: {
-            "desc": "Imbalance or Input Phase Loss",
-            "causes": "Mains voltage imbalance too high; phase missing.",
-        },
-        21: {
-            "desc": "DC Link Undervoltage",
-            "causes": "Input voltage too low; Phase loss.",
-        },
-        22: {
-            "desc": "DC Link Overvoltage",
-            "causes": "Inertia too high; Decel time too short.",
-        },
-        30: {"desc": "Power Module U Fault", "causes": "Short-circuit U-V or U-W."},
-        34: {"desc": "Power Module V Fault", "causes": "Short-circuit V-U or V-W."},
-        38: {"desc": "Power Module W Fault", "causes": "Short-circuit W-U or W-V."},
-        42: {"desc": "DB IGBT Fault", "causes": "Braking resistor short."},
-        48: {"desc": "IGBT Overload Fault", "causes": "High current at output."},
-        51: {"desc": "IGBT Overtemperature", "causes": "High temp on IGBTs."},
-        71: {
-            "desc": "Output Overcurrent",
-            "causes": "Excessive load inertia; Accel time too short.",
-        },
-        72: {"desc": "Motor Overload", "causes": "Motor shaft load is excessive."},
-        74: {"desc": "Ground Fault", "causes": "Short circuit to ground."},
-        78: {"desc": "Motor Overtemperature", "causes": "Excessive load/duty cycle."},
-        156: {"desc": "Undertemperature", "causes": "Air temp <= -30 °C."},
-        185: {
-            "desc": "Pre-charge Contactor Fault",
-            "causes": "Open command fuse; Contactor defect.",
-        },
-    }
-
-    data = faults.get(code)
-    if not data:
-        return f"Fault F{code:03d} not found in database."
-
-    if description_only:
-        return data["desc"]
-
-    return (
-        f"FAULT F{code:03d}\n"
-        f"Description: {data['desc']}\n"
-        f"Possible Causes: {data['causes']}"
-    )
-
-
-def get_alarm(code, description_only=False):
-    """
-    Returns information for inverter Alarms (A###).
-    """
-    alarms = {
-        46: {"desc": "High Load on Motor", "causes": "High load."},
-        47: {"desc": "IGBT Overload Alarm", "causes": "High current."},
-        50: {"desc": "IGBT High Temperature", "causes": "High ambient temp."},
-        88: {"desc": "Communication Lost", "causes": "Loose cable."},
-        90: {"desc": "External Alarm", "causes": "Digital input open."},
-        110: {"desc": "High Motor Temperature", "causes": "Excessive shaft load."},
-        128: {"desc": "Timeout for Serial Communication", "causes": "Timeout."},
-        152: {"desc": "Internal Air High Temperature", "causes": "Fan defective."},
-        177: {"desc": "Fan Replacement", "causes": "Fan hours exceeded."},
-        702: {"desc": "Inverter Disabled", "causes": "General Enable not active."},
-    }
-
-    data = alarms.get(code)
-    if not data:
-        return f"Alarm A{code:03d} not found in database."
-
-    if description_only:
-        return data["desc"]
-
-    return (
-        f"ALARM A{code:03d}\n"
-        f"Description: {data['desc']}\n"
-        f"Possible Causes: {data['causes']}"
-    )
-
-
 class ControlBits(IntFlag):
     """
     Defines the 16-bit control word mapping.
@@ -316,19 +234,18 @@ class Treadmill(Node):
         speed = msg.data
 
         # Handle direction based on sign
-        if speed < 0:
-            speed = abs(speed)
-            if self.set_direction:
-                self.set_direction = False
-                self._send_special_command()
-        elif speed > 0:
-            if not self.set_direction:
-                self.set_direction = True
-                self._send_special_command()
-
-        # convert speed to rpm (Fixed function name)
+        # if speed < 0:
+        #     speed = abs(speed)
+        #     if self.set_direction:
+        #         self.set_direction = False
+        #         self._send_special_command()
+        # elif speed > 0:
+        #     if not self.set_direction:
+        #         self.set_direction = True
+        #         self._send_special_command()
+        #
+        # convert speed to rpm
         raw_rpm = self._convert_speed_to_rpm(speed)
-        # fix
         synchronous_speed = 1800
         max_resolution = 8192
         # get in 13 bit resolution
@@ -344,51 +261,30 @@ class Treadmill(Node):
         if not self.client:
             return
 
-        # get current speed in mps (Fixed method name)
+        # get current speed in mps
         speed_mps = self._get_speed()
+        # get current status code
+        status_code = int(self.read_param("status", type=int))
 
-        # get logic status
-        logic_msg = self.client.read_holding_registers(address=680, count=1, slave=1)
+        # status code mapping based on CPM 16-2
+        status_desc = {
+            0: "Ready",
+            1: "Run",
+            2: "Undervoltage",
+            3: "Fault",
+            4: "Self-Tuning",
+            5: "Configuration",
+            6: "DC-Breaking",
+            7: "STO",
+        }
 
-        # Check for error first
-        if logic_msg.isError():
-            self.get_logger().warn("Failed to read logic status")
-            return
-
-        logic_val = int(logic_msg.registers[0])
-
-        # Bit parsing
-        faulted = bool(logic_val & (1 << 15))
-        undervoltage = bool(logic_val & (1 << 13))
-        direction = bool(logic_val & (1 << 10))
-        power_on = bool(logic_val & (1 << 9))
-        running = bool(logic_val & (1 << 8))
-        alarm = bool(logic_val & (1 << 7))
-        accel_profile = bool(logic_val & (1 << 5))
-        quick_stop = bool(logic_val & (1 << 4))
-
-        error_code = ""
-
-        # if fault or alarm present , read and publish info
-        if faulted or alarm:
-            if faulted:
-                present_fault = self.read_param("fault_code", type=int)
-                fault_info = get_fault(present_fault)
-                self.get_logger().error(fault_info)
-                error_code = f"F{present_fault}"
-
-            if alarm:
-                present_alarm = self.read_param("alarm_code", type=int)
-                alarm_info = get_alarm(present_alarm)
-                self.get_logger().warn(alarm_info)
-                error_code = f"A{present_alarm}"
-
-        #        direction_sign = 1 if direction else -1
+        # Get the status message based on the status code
+        status_str = status_desc.get(status_code)
 
         # Publish treadmill status
         ms = TreadmillStatus()
-        ms.speed_mps = speed_mps  # * direction_sign
-        ms.error = error_code
+        ms.speed_mps = speed_mps
+        ms.status = f"{status_code}: {status_str}"
         self.pub_status.publish(ms)
 
 
