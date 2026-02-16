@@ -116,8 +116,7 @@ class Treadmill(Node):
             speed_mps = rpm_to_mps(rpm)
 
         else:
-            speed_mps = None
-            # or maybe set to -999999
+            speed_mps = -999999
 
         # for more details see SCM pg. 13-14
         logic_msg = self.client.read_holding_registers(address=680, count=1, slave=1)
@@ -168,7 +167,7 @@ class Treadmill(Node):
             status = float(read_status.registers[0])
         else:
             self.get_logger().warn("Failed to read status word")
-            status = None
+            status = "failed to read status"
 
         # Publish treadmill status
         msg = TreadmillStatus()
