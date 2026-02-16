@@ -164,7 +164,8 @@ class Treadmill(Node):
 
         read_status = self.client.read_holding_registers(address=6, count=1, slave=1)
         if not read_status.isError():
-            status = float(read_status.registers[0])
+            status_raw = float(read_status.registers[0])
+            status = str(status_raw)
         else:
             self.get_logger().warn("Failed to read status word")
             status = "failed to read status"
