@@ -117,6 +117,7 @@ class TreadmillGUI(QMainWindow):
         self.elapsed_time = 0.0
         self.is_running = False
         self.last_error = ""
+        self.start = False
 
         # Data for graph
         self.max_data_points = 500
@@ -373,26 +374,11 @@ class TreadmillGUI(QMainWindow):
         power_layout.addWidget(self.reset_button)
         layout.addLayout(power_layout)
 
-        # Start/Stop toggle button
-        self.start_stop_button = AnimatedButton("▶ START")
-        self.start_stop_button.setObjectName("startButton")
-        self.start_stop_button.setStyleSheet("""
-            QPushButton#startButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #43a047, stop:1 #2e7d32);
-                border: 2px solid #66bb6a;
-                font-size: 16px;
-                font-weight: 700;
-                min-height: 65px;
-            }
-            QPushButton#startButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #4caf50, stop:1 #388e3c);
-                border: 2px solid #81c784;
-            }
-        """)
-        self.start_stop_button.clicked.connect(self.toggle_start_stop)
-        layout.addWidget(self.start_stop_button)
+        # Stop button
+        self.stop_button = AnimatedButton("■ STOP")
+        self.stop_button.setObjectName("stopButton")
+        self.stop_button.clicked.connect(self.stop_treadmill)
+        layout.addWidget(self.stop_button)
 
         # Separator line
         line = QFrame()
@@ -656,106 +642,28 @@ class TreadmillGUI(QMainWindow):
                     }
                 """)
 
-    def toggle_start_stop(self):
-        """Toggle between start and stop"""
+    def stop_treadmill(self):
+        """Send stop command"""
         if self.ros_node:
-            if self.is_running:
-                # Stop the treadmill
-                self.ros_node.send_command("stop")
-                self.set_speed = 0.0
-                self.is_running = False
-
-                # Update button to show START
-                self.start_stop_button.setText("▶ START")
-                self.start_stop_button.setObjectName("startButton")
-                self.start_stop_button.setStyleSheet("""
-                    QPushButton#startButton {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #43a047, stop:1 #2e7d32);
-                        border: 2px solid #66bb6a;
-                        font-size: 16px;
-                        font-weight: 700;
-                        min-height: 65px;
-                    }
-                    QPushButton#startButton:hover {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #4caf50, stop:1 #388e3c);
-                        border: 2px solid #81c784;
-                    }
-                """)
-            else:
-                # Start the treadmill (send the current set_speed)
-                if self.set_speed != 0.0 and self.power_on:
-                    self.ros_node.send_command("start")
-                    self.is_running = True
-
-                    # Update button to show STOP
-                    self.start_stop_button.setText("■ STOP")
-                    self.start_stop_button.setObjectName("stopButton")
-                    self.start_stop_button.setStyleSheet("""
-                        QPushButton#stopButton {
-                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #d32f2f, stop:1 #b71c1c);
-                            border: 2px solid #f44336;
-                            font-size: 16px;
-                            font-weight: 700;
-                            min-height: 65px;
-                        }
-                        QPushButton#stopButton:hover {
-                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #e53935, stop:1 #c62828);
-                            border: 2px solid #ff5252;
-                        }
-                    """)
-                elif not self.power_on:
-                    # Show message if power is off
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.setWindowTitle("Power Off")
-                    msg.setText("Please turn on power before starting the treadmill")
-                    msg.setStyleSheet("""
-                        QMessageBox {
-                            background: #2d3238;
-                        }
-                        QLabel {
-                            color: #e0e0e0;
-                            font-size: 13px;
-                        }
-                        QPushButton {
-                            min-width: 80px;
-                        }
-                    """)
-                    msg.exec()
-                elif self.set_speed == 0.0:
-                    # Show message if speed is zero
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.setWindowTitle("Speed Not Set")
-                    msg.setText("Please set a speed before starting the treadmill")
-                    msg.setStyleSheet("""
-                        QMessageBox {
-                            background: #2d3238;
-                        }
-                        QLabel {
-                            color: #e0e0e0;
-                            font-size: 13px;
-                        }
-                        QPushButton {
-                            min-width: 80px;
-                        }
-                    """)
-                    msg.exec()
+            self.set_speed = 0.0
+            self.ros_node.send_speed(self.set_speed)
+            self.ros_node.send_command("stop")
+            self.start = False
+            self.is_running = False
 
     def reset_treadmill(self):
         """Reset treadmill"""
         if self.ros_node:
+            self.set_speed = 0.0
+            self.ros_node.send_speed(self.set_speed)
+            self.ros_node.send_command("stop")
             self.ros_node.send_command("off")
             self.power_on = False
 
-            self.set_speed = 0.0
             self.distance = 0.0
             self.elapsed_time = 0.0
             self.is_running = False
+            self.start = False
 
             self.time_data.clear()
             self.speed_data.clear()
@@ -763,25 +671,6 @@ class TreadmillGUI(QMainWindow):
             # Clear the graph display immediately
             self.speed_curve.setData([], [])
             self.fill.setData([], [])
-
-            # Reset start/stop button to START state
-            self.start_stop_button.setText("▶ START")
-            self.start_stop_button.setObjectName("startButton")
-            self.start_stop_button.setStyleSheet("""
-                QPushButton#startButton {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 #43a047, stop:1 #2e7d32);
-                    border: 2px solid #66bb6a;
-                    font-size: 16px;
-                    font-weight: 700;
-                    min-height: 65px;
-                }
-                QPushButton#startButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 #4caf50, stop:1 #388e3c);
-                    border: 2px solid #81c784;
-                }
-            """)
 
             QTimer.singleShot(500, lambda: self.ros_node.send_command("on"))
             QTimer.singleShot(500, lambda: setattr(self, "power_on", True))
@@ -822,31 +711,12 @@ class TreadmillGUI(QMainWindow):
         self.set_speed = round(self.set_speed, 2)
 
         if self.ros_node:
+            if not self.start:
+                self.ros_node.send_command("start")
             self.ros_node.send_speed(self.set_speed)
 
         if self.set_speed != 0.0 and self.power_on:
-            if not self.is_running:
-                self.is_running = True
-                # Update button to STOP state
-                self.start_stop_button.setText("■ STOP")
-                self.start_stop_button.setObjectName("stopButton")
-                self.start_stop_button.setStyleSheet("""
-                    QPushButton#stopButton {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #d32f2f, stop:1 #b71c1c);
-                        border: 2px solid #f44336;
-                        font-size: 16px;
-                        font-weight: 700;
-                        min-height: 65px;
-                    }
-                    QPushButton#stopButton:hover {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #e53935, stop:1 #c62828);
-                        border: 2px solid #ff5252;
-                    }
-                """)
-            else:
-                self.is_running = True
+            self.is_running = True
 
     def set_manual_speed(self):
         """Set manual speed"""
@@ -860,28 +730,7 @@ class TreadmillGUI(QMainWindow):
             self.speed_input.clear()
 
             if self.set_speed != 0.0 and self.power_on:
-                if not self.is_running:
-                    self.is_running = True
-                    # Update button to STOP state
-                    self.start_stop_button.setText("■ STOP")
-                    self.start_stop_button.setObjectName("stopButton")
-                    self.start_stop_button.setStyleSheet("""
-                        QPushButton#stopButton {
-                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #d32f2f, stop:1 #b71c1c);
-                            border: 2px solid #f44336;
-                            font-size: 16px;
-                            font-weight: 700;
-                            min-height: 65px;
-                        }
-                        QPushButton#stopButton:hover {
-                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #e53935, stop:1 #c62828);
-                            border: 2px solid #ff5252;
-                        }
-                    """)
-                else:
-                    self.is_running = True
+                self.is_running = True
 
         except ValueError:
             msg = QMessageBox(self)
