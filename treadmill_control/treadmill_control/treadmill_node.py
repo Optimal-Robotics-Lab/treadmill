@@ -1,354 +1,125 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32, Bool, String
+from std_msgs.msg import Float32, String
 from pymodbus.client import ModbusSerialClient
 from treadmill_interfaces.msg import TreadmillStatus
 import glob
-from enum import IntFlag, auto
-import time
+from math import pi
 
-# Definitions
-# CPM = CFW-11 Programing Manual
-# SCM = CFW-11 Serial Communication Manual
+"""
+Reference Definitions
+PM = CFW-11 Programing Manual
+SCM = CFW-11 Serial Communication Manual
 
-# temporary aproximation
-RPM_TO_MPS = 0.0108  # Conversion factor from RPM to meters per second
-RPM_TO_MPS_INTERCEPT = -0.0056  # Conversion factor from RPM to meters per second
-
-param_dict = {
-    "speed_ref": 1,  # Reference speed (see CPM 16-1)
-    "motor_speed": 2,  # Actual motor speed,
-    "motor_current": 3,  # motor current
-    "status": 6,  # Motor status
-    "motor_voltage": 7,  # motor voltage
-    "motor_torque": 9,  # motor torque
-    "alarm_code": 48,  # alarm code (see CPM 16-9)
-    "fault_code": 49,  # fault code (see CPM 16-9)
-    "accel_time": 100,  # time to accelerate to full speed in seconds
-    "decel_time": 101,  # time to decelerate to full stop in seconds
-    "accel_time_2": 102,
-    "decel_time_2": 103,
-    "logic_status": 680,  # logic status see (SCM 13)
-    "serial_control_word": 682,  # control word for commands from usb
-    "serial_speed_ctrl": 683,  # speed control from usb
-}
+Both references are found in the docs folder
+"""
 
 
-def get_fault(code, description_only=False):
-    """
-    Returns information for inverter Faults (F###).
-    """
-    faults = {
-        6: {
-            "desc": "Imbalance or Input Phase Loss",
-            "causes": "Mains voltage imbalance too high; phase missing.",
-        },
-        21: {
-            "desc": "DC Link Undervoltage",
-            "causes": "Input voltage too low; Phase loss.",
-        },
-        22: {
-            "desc": "DC Link Overvoltage",
-            "causes": "Inertia too high; Decel time too short.",
-        },
-        30: {"desc": "Power Module U Fault", "causes": "Short-circuit U-V or U-W."},
-        34: {"desc": "Power Module V Fault", "causes": "Short-circuit V-U or V-W."},
-        38: {"desc": "Power Module W Fault", "causes": "Short-circuit W-U or W-V."},
-        42: {"desc": "DB IGBT Fault", "causes": "Braking resistor short."},
-        48: {"desc": "IGBT Overload Fault", "causes": "High current at output."},
-        51: {"desc": "IGBT Overtemperature", "causes": "High temp on IGBTs."},
-        71: {
-            "desc": "Output Overcurrent",
-            "causes": "Excessive load inertia; Accel time too short.",
-        },
-        72: {"desc": "Motor Overload", "causes": "Motor shaft load is excessive."},
-        74: {"desc": "Ground Fault", "causes": "Short circuit to ground."},
-        78: {"desc": "Motor Overtemperature", "causes": "Excessive load/duty cycle."},
-        156: {"desc": "Undertemperature", "causes": "Air temp <= -30 °C."},
-        185: {
-            "desc": "Pre-charge Contactor Fault",
-            "causes": "Open command fuse; Contactor defect.",
-        },
-    }
-
-    data = faults.get(code)
-    if not data:
-        return f"Fault F{code:03d} not found in database."
-
-    if description_only:
-        return data["desc"]
-
-    return (
-        f"FAULT F{code:03d}\n"
-        f"Description: {data['desc']}\n"
-        f"Possible Causes: {data['causes']}"
-    )
+radius = 0.177  # roller radius in meters
+ratio = 56 / 80  # gear ratio
 
 
-def get_alarm(code, description_only=False):
-    """
-    Returns information for inverter Alarms (A###).
-    """
-    alarms = {
-        46: {"desc": "High Load on Motor", "causes": "High load."},
-        47: {"desc": "IGBT Overload Alarm", "causes": "High current."},
-        50: {"desc": "IGBT High Temperature", "causes": "High ambient temp."},
-        88: {"desc": "Communication Lost", "causes": "Loose cable."},
-        90: {"desc": "External Alarm", "causes": "Digital input open."},
-        110: {"desc": "High Motor Temperature", "causes": "Excessive shaft load."},
-        128: {"desc": "Timeout for Serial Communication", "causes": "Timeout."},
-        152: {"desc": "Internal Air High Temperature", "causes": "Fan defective."},
-        177: {"desc": "Fan Replacement", "causes": "Fan hours exceeded."},
-        702: {"desc": "Inverter Disabled", "causes": "General Enable not active."},
-    }
-
-    data = alarms.get(code)
-    if not data:
-        return f"Alarm A{code:03d} not found in database."
-
-    if description_only:
-        return data["desc"]
-
-    return (
-        f"ALARM A{code:03d}\n"
-        f"Description: {data['desc']}\n"
-        f"Possible Causes: {data['causes']}"
-    )
+def rpm_to_mps(rpm):
+    return 2 * pi * radius * (rpm / 60) * ratio
 
 
-class ControlBits(IntFlag):
-    """
-    Defines the 16-bit control word mapping.
-    Using 1 << n ensures the bit position is explicit.
-    """
-
-    NONE = 0
-    START_STOP = 1 << 0  # 0x01
-    ON_OFF = 1 << 1  # 0x02
-    DIRECTION = 1 << 2  # 0x04
-    JOG = 1 << 3  # 0x08
-    LOC_REM = 1 << 4  # 0x10
-    ACCEL_PROFILE = 1 << 5  # 0x20
-    QUICK_STOP = 1 << 6  # 0x40
-    FAULT_RESET = 1 << 7  # 0x80
+def mps_to_rpm(mps):
+    return (mps / (2 * pi * radius * ratio)) * 60
 
 
 class Treadmill(Node):
     def __init__(self):
-        super().__init__("treadmill_node")
+        super().__init__("treadmill_control")
 
-        # === ROS 2 Parameters ===
-        self.declare_parameter("serial_port", "")
-
-        # === Setup Modbus RTU connection ===
-        # Use parameter if provided, otherwise auto-detect
-        port_param = (
-            self.get_parameter("serial_port").get_parameter_value().string_value
-        )
-
-        if port_param:
-            port = port_param
-            self.get_logger().info(f"Using configured serial port: {port}")
-        else:
-            self.get_logger().info(
-                "No serial port configured. Attempting to auto-detect..."
-            )
-            port = self._find_serial_port()
-
+        port = self._find_serial_port()
         if not port:
             self.get_logger().error("No matching USB serial device found.")
-            # We exit constructor, but Node spin might still happen.
-            # Ideally handled by logic checks later or raising exception.
-            self.client = None
             return
 
         # Set up Modbus RTU connection
         self.client = ModbusSerialClient(
             port=port, baudrate=9600, parity="E", stopbits=1, bytesize=8, timeout=1
         )
-
         if not self.client.connect():
             self.get_logger().error(f"Failed to connect to CFW-11 on {port}")
-            self.client = None
             return
         else:
             self.get_logger().info(f"Connected to CFW-11 on {port}")
 
-        # === ROS 2 Subscribers ===
-        self.create_subscription(
-            String, "treadmill/special_cmd", self.special_cmd_callback, 10
-        )
+        # === ROS 2 Publishers and Subscribers ===
+
+        self.pub_status = self.create_publisher(TreadmillStatus, "treadmill/status", 10)
+
         self.create_subscription(
             Float32, "treadmill/cmd_speed_mps", self.set_speed_callback, 10
         )
+        self.create_subscription(
+            String, "treadmill/special_cmd", self.special_cmd_callback, 10
+        )
 
-        # === ROS 2 publishers ===
-        self.pub_status = self.create_publisher(TreadmillStatus, "treadmill/status", 10)
-
-        # Internal State Variables
-        self.set_start_stop = False
-        self.set_on_off = False
-        self.set_direction = False
-        self.set_jog = False
-        self.set_loc_rem = False
-        self.set_accel_profile = False
-        self.set_quick_stop = False
-        self.set_fault_reset = False
-
-        # Speed tracking
-        self.set_speed_rpm = 0.0
-
-        # Timer to poll CFW-11 parameters
+        # update loop timer to periaodically read status and publish
         self.create_timer(0.1, self.update_loop)
+
+        # == special_cmd instance variables ==
+        self.start = False  # treadmill moving or not
+        self.on = False  # power on/off
+        self.direction = True  # True for forward, False for reverse
+        self.jog = False  # False for normal operation, True for jog mode
+        self.local = False  # False for remote mode, True for local mode
+        self.ramp_profile = (
+            False  # False = acceleration profile 1 ,True = accel profile 2
+        )
+        self.quick_stop = False  # False for not actived, True for quick stop activated
+        self.fault_reset = (
+            False  # False for normal operation, True for sending fault reset command
+        )
 
     def _find_serial_port(self):
         """
         Tries to find the serial port automatically.
         Prioritizes known IDs, then falls back to generic USB/ACM ports.
         """
-        # 1. Try specific persistent IDs (more reliable if hardware is constant)
         for path in glob.glob("/dev/serial/by-id/*"):
             if "1a86" in path or "QinHeng" in path or "USB_Single_Serial" in path:
                 return path
 
-        # 2. Fallback: Return the first available USB or ACM serial device
+        # Fallback: Return the first available USB or ACM serial device
         generic_ports = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
         if generic_ports:
             return generic_ports[0]
 
         return None
 
-    def read_param(self, param_name, type=float):
-        """Read a parameter from the CFW-11 using its name."""
-        if not self.client:
-            return 0
-
-        if param_name not in param_dict:
-            raise ValueError(f"Unknown parameter name: {param_name}")
-        param = param_dict.get(param_name)
-
-        param_value = self.client.read_holding_registers(
-            address=param, count=1, slave=1
-        )
-        if not param_value.isError():
-            if type is int:
-                return int(param_value.registers[0])
-            else:
-                return float(param_value.registers[0])
-        return 0
-
-    def special_cmd_callback(self, msg):
-        string = msg.data
-
-        if string == "go":
-            self.set_start_stop = True
-        elif string == "stop":
-            self.set_start_stop = False
-        elif string == "power_on":
-            self.set_on_off = True
-        elif string == "power_off":
-            self.set_on_off = False
-        elif string == "quick_stop":
-            self.set_quick_stop = True
-        elif string == "reset_fault":
-            self.set_fault_reset = True
-        elif string == "set_accel_profile_1":
-            self.set_accel_profile = False
-        elif string == "set_accel_profile_2":
-            self.set_accel_profile = True
-        else:
-            self.get_logger().warn(f"Unknown command: {string}")
-
-        self._send_special_command()
-
-    def _send_special_command(self):
-        if not self.client:
-            return
-        # Get control word as integer
-        val = self.build_control_word()
-
-        # Write register expects an integer, not a hex string
-        self.client.write_register(address=682, value=val, slave=1)
-
-        # Clean up momentary flags
-        if self.set_quick_stop:
-            self.set_quick_stop = False
-        if self.set_fault_reset:
-            self.set_fault_reset = False
-
-    def build_control_word(self) -> int:
-        """Calculates the integer value using IntFlag logic."""
-        word = ControlBits.NONE
-
-        if self.set_start_stop:
-            word |= ControlBits.START_STOP
-        if self.set_on_off:
-            word |= ControlBits.ON_OFF
-        if self.set_direction:
-            word |= ControlBits.DIRECTION
-        if self.set_jog:
-            word |= ControlBits.JOG
-        if self.set_loc_rem:
-            word |= ControlBits.LOC_REM
-        if self.set_accel_profile:
-            word |= ControlBits.ACCEL_PROFILE
-        if self.set_quick_stop:
-            word |= ControlBits.QUICK_STOP
-        if self.set_fault_reset:
-            word |= ControlBits.FAULT_RESET
-
-        return int(word)
-
-    def _get_speed(self):
-        rpm = self.read_param("motor_speed")
-        speed_mps = self._convert_rpm_to_speed(rpm)
-        return speed_mps
-
-    def _convert_speed_to_rpm(self, speed_mps):
-        return speed_mps / RPM_TO_MPS
-
-    def _convert_rpm_to_speed(self, rpm):
-        return rpm * RPM_TO_MPS
-
     def set_speed_callback(self, msg):
-        if not self.client:
-            return
-
-        speed = msg.data
-
-        # Handle direction based on sign
-        if speed < 0:
-            speed = abs(speed)
-            if self.set_direction:
-                self.set_direction = False
-                self._send_special_command()
-        elif speed > 0:
-            if not self.set_direction:
-                self.set_direction = True
-                self._send_special_command()
-
-        # convert speed to rpm (Fixed function name)
-        raw_rpm = self._convert_speed_to_rpm(speed)
-
+        # for more details see SCM pg 16
+        speed_mps = msg.data
+        rpm = mps_to_rpm(speed_mps)
         synchronous_speed = 1800
         max_resolution = 8192
-        # get in 13 bit resolution
-        rpm_cmd = int(raw_rpm * max_resolution / synchronous_speed)
 
-        self.client.write_register(address=683, value=rpm_cmd, slave=1)
-        self.get_logger().info(
-            f"Set speed command: {speed:.2f} m/s -> {raw_rpm:.2f} RPM (raw: {rpm_cmd})"
-        )
-        self.set_speed_rpm = raw_rpm
+        value = int(rpm * max_resolution / synchronous_speed)
+
+        # untested code to handle negative values
+        if value < 0:
+            value = value & 0xFFFF
+
+        value = max(0, min(value, 65535))
+
+        self.client.write_register(address=683, value=value, slave=1)
+        self.get_logger().info(f"Set speed to {rpm:.2f} RPM")
 
     def update_loop(self):
-        if not self.client:
-            return
+        # for more details see PM 16-2
+        read_rpm = self.client.read_holding_registers(address=2, count=1, slave=1)
+        if not read_rpm.isError():
+            rpm = float(read_rpm.registers[0])
+            speed_mps = rpm_to_mps(rpm)
 
-        # get current speed in mps (Fixed method name)
-        speed_mps = self._get_speed()
+        else:
+            speed_mps = None
+            # or maybe set to -999999
 
-        # get logic status
+        # for more details see SCM pg. 13-14
         logic_msg = self.client.read_holding_registers(address=680, count=1, slave=1)
 
         # Check for error first
@@ -373,24 +144,88 @@ class Treadmill(Node):
         # if fault or alarm present , read and publish info
         if faulted or alarm:
             if faulted:
-                present_fault = self.read_param("fault_code", type=int)
-                fault_info = get_fault(present_fault)
-                self.get_logger().error(fault_info)
+                read_fault = self.client.read_holding_registers(
+                    address=49, count=1, slave=1
+                )
+                if not read_fault.isError():
+                    present_fault = float(read_fault.registers[0])
+                else:
+                    present_fault = "Cannot read fault code"
                 error_code = f"F{present_fault}"
 
             if alarm:
-                present_alarm = self.read_param("alarm_code", type=int)
-                alarm_info = get_alarm(present_alarm)
-                self.get_logger().warn(alarm_info)
+                read_alarm = self.client.read_holding_registers(
+                    address=48, count=1, slave=1
+                )
+                if not read_alarm.isError():
+                    present_alarm = float(read_alarm.registers[0])
+                else:
+                    present_alarm = "Cannot read alarm code"
                 error_code = f"A{present_alarm}"
 
-        direction_sign = 1 if direction else -1
+        read_status = self.client.read_holding_registers(address=6, count=1, slave=1)
+        if not read_status.isError():
+            status = float(read_status.registers[0])
+        else:
+            self.get_logger().warn("Failed to read status word")
+            status = None
 
         # Publish treadmill status
-        ms = TreadmillStatus()
-        ms.speed_mps = speed_mps * direction_sign
-        ms.error = error_code
-        self.pub_status.publish(ms)
+        msg = TreadmillStatus()
+        msg.speed_mps = speed_mps
+        msg.error = error_code
+        msg.status = status
+        self.pub_status.publish(msg)
+
+    def special_cmd_callback(self, msg):
+        string = msg.data
+
+        if string == "start":
+            self.start = True
+        elif string == "stop":
+            self.start = False
+        elif string == "on":
+            self.on = True
+        elif string == "off":
+            self.on = False
+        elif string == "quick_stop":
+            self.quick_stop = True
+        elif string == "reset_fault":
+            self.fault_reset = True
+        elif string == "set_accel_profile_1":
+            self.ramp_profile = False
+        elif string == "set_accel_profile_2":
+            self.ramp_profile = True
+        else:
+            self.get_logger().warn(f"Unknown command: {string}")
+
+        word = self.construct_control_word()
+
+        self.client.write_register(address=682, value=word, slave=1)
+
+        # Clean up momentary flags
+        if self.quick_stop:
+            self.quick_stop = False
+        if self.fault_reset:
+            self.fault_reset = False
+
+    def construct_control_word(self):
+        """
+        Create the control word based on the current state of the command flags.
+        for param 682 for details see
+        """
+
+        control_word = 0
+        control_word |= self.start << 0
+        control_word |= self.on << 1
+        control_word |= self.direction << 2
+        control_word |= self.jog << 3
+        control_word |= self.local << 4
+        control_word |= self.ramp_profile << 5
+        control_word |= self.quick_stop << 6
+        control_word |= self.fault_reset << 7
+
+        return control_word
 
 
 def main(args=None):
