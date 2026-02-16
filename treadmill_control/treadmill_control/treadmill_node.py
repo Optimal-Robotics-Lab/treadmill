@@ -24,7 +24,7 @@ def rpm_to_mps(rpm):
 
 
 def mps_to_rpm(mps):
-    return (mps / (2 * pi * radius * ratio)) * 60
+    return round((mps / (2 * pi * radius * ratio)) * 60, 0)
 
 
 class Treadmill(Node):
