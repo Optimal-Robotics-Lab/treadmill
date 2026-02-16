@@ -3,7 +3,7 @@
 export ROS_DOMAIN_ID=11
 
 # Source ROS2
-source opt/ros/jazzy/setup.bash
+# source opt/ros/jazzy/setup.bash
 
 source install/setup.bash
 
