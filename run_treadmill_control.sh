@@ -9,15 +9,15 @@ source /opt/ros/jazzy/setup.bash
 # source workspace (put your path here)
 source install/setup.bash
 
-MODEL_NAME=$(cat /sys/firmware/device-tree/base/model 2>/dev/null)
+MODEL_NAME=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')
 
-# check if running on Raspberry Pi
 if [[ "$MODEL_NAME" == *"Raspberry Pi"* ]]; then
-	PI='true'
+        PI='true'
 else
-	PI='false'
+        PI='false'
 
 fi
+
 # launch control node
 ros2 launch treadmill_control treadmill_control.launch.py is_pi:=$PI
 # is pi flag is used to determine if we are running on a Raspberry Pi, if we are it also runs the status led node
